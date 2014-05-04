@@ -3,7 +3,8 @@ module Fluent
     Fluent::Plugin.register_output('ruby_one_liner', self)
     
     config_param :require_libs, :string,:default => ''
-    config_param :command, :string
+    config_param :command, :string, :default => ''
+    config_param :commandfile, :string, :default => ''
     config_param :run_interval, :integer
 
     def initialize
@@ -16,9 +17,17 @@ module Fluent
       libs = @require_libs.split(',')
       libs.each {|lib| require lib}
 
+      command = if !@command.empty?
+        @command
+      elsif !@commandfile.empty?
+        open(@commandfile).read
+      else
+        raise ConfigError, "command or commandfile is required to be set."    
+      end
       @config = config
-      @lambda = eval("lambda {|tag, time, record| #{@command}}")
+      @lambda = eval("lambda {|tag, time, record| #{command}}")
       @q = Queue.new
+      @locker = Mutex::new
     end
 
     def start
