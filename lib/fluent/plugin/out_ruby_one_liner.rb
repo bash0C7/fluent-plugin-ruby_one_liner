@@ -3,7 +3,8 @@ module Fluent
     Fluent::Plugin.register_output('ruby_one_liner', self)
     
     config_param :require_libs, :string,:default => ''
-    config_param :command, :string
+    config_param :command, :string, :default => ''
+    config_param :commandfile, :string, :default => ''
     config_param :run_interval, :integer
 
     def initialize
@@ -12,12 +13,25 @@ module Fluent
 
     def configure(config)
       super
-
+      
       libs = @require_libs.split(',')
       libs.each {|lib| require lib}
 
+      Signal.trap :INT do
+        $log.warn 'out_ruby_one_liner: reload commandfile start'
+        reload_commandfile!
+        $log.warn 'out_ruby_one_liner: reload commandfile end'
+      end
+
+      command = if !@command.empty?
+        @command
+      elsif !@commandfile.empty?
+        open(@commandfile).read
+      else
+        raise ConfigError, "out_ruby_one_liner: command or commandfile is required to be set."    
+      end
       @config = config
-      @lambda = eval("lambda {|tag, time, record| #{@command}}")
+      @lambda = eval("lambda {|tag, time, record| #{command}}")
       @q = Queue.new
     end
 
@@ -49,6 +63,13 @@ module Fluent
     end
 
     private
+    
+    def reload_commandfile!
+      command = open(@commandfile).read
+      Thread.kill(@thread)
+      @lambda = eval("lambda {|tag, time, record| #{command}}")
+      @thread = Thread.new(&method(:run))
+    end
     
     def run
       loop do
