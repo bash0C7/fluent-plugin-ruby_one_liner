@@ -13,21 +13,26 @@ module Fluent
 
     def configure(config)
       super
-
+      
       libs = @require_libs.split(',')
       libs.each {|lib| require lib}
+
+      Signal.trap :INT do
+        $log.warn 'out_ruby_one_liner: reload commandfile start'
+        reload_commandfile!
+        $log.warn 'out_ruby_one_liner: reload commandfile end'
+      end
 
       command = if !@command.empty?
         @command
       elsif !@commandfile.empty?
         open(@commandfile).read
       else
-        raise ConfigError, "command or commandfile is required to be set."    
+        raise ConfigError, "out_ruby_one_liner: command or commandfile is required to be set."    
       end
       @config = config
       @lambda = eval("lambda {|tag, time, record| #{command}}")
       @q = Queue.new
-      @locker = Mutex::new
     end
 
     def start
@@ -58,6 +63,13 @@ module Fluent
     end
 
     private
+    
+    def reload_commandfile!
+      command = open(@commandfile).read
+      Thread.kill(@thread)
+      @lambda = eval("lambda {|tag, time, record| #{command}}")
+      @thread = Thread.new(&method(:run))
+    end
     
     def run
       loop do
